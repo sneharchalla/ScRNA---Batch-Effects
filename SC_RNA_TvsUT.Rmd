@@ -1,0 +1,77 @@
+---
+title: "SC_RNA_treated vs untreated"
+author: "Sneha Challa"
+date: "3/9/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+__* Objective: *__  
+
+The goal of this project is to determine the heterogeniety of the tumor cells coming from the liver tissue of patients suffering with Hepatoblastoma(HB), a form of pediatric liver cancer. A secondary objective is to account for any batch effects that might be observed due to the integration of samples from multiple sources. 
+
+__*Data: *__  
+
+The data is obtained from NCBI geo, accession number: GSE180665. The data is downloaded and unzipped to show data from three types of tissues: actual tumor, background (i.e., cells from around the tumor) and patient derived xenografts(PDX) which are cells grown within a mouse to study different stages of cancer and its progression. 
+
+The data is from three individuals labelled HB17, HB30 and HB53. The dataset contains both background and PDX data for patients HB30 and HB53. HB17 has data from all three tissues including tumor samples that is missing for the other two patients. Because data is from multiple sources (patients and tissues), a larger variation is expected to arise from the batch affects which can confound the actual variation in gene expression data. This report describes how we accounted for these batch effects using the conventional seruat batch processing method. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The libraries included for the analysis of this dataset are shown below: 
+```{r libraries, include=TRUE, echo=FALSE, warning=FALSE}
+#Load Libraries:
+library(Seurat)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+```
+
+*Step 1:*  The first step is to read the data into R using the `list.dirs` function. This is useful as there are 7 directories in total for each of the sample from each patient. A seurat object is created for each of the directories, generating a total of 7 seurat objects. 
+```{r data, include=FALSE, echo=FALSE, warning=FALSE}
+#get data location into R: 
+
+dirs <- list.dirs(path = '/Users/snehachalla/Desktop/Projects/Genomics/SCRNA', recursive = F, full.names = F)
+
+dirs
+
+#go into each folder and fetch the counts matrix, create a Seurat object and assign to a variable
+
+for (x in dirs){
+  #create variable names:
+  name <- gsub('_filtered_feature_bc_matrix', '',x)
+  cts <- ReadMtx(mtx = paste0('/Users/snehachalla/Desktop/Projects/Genomics/SCRNA/',x,'/matrix.mtx.gz'),
+          features = paste0('/Users/snehachalla/Desktop/Projects/Genomics/SCRNA/',x,'/features.tsv.gz'),
+          cells = paste0('/Users/snehachalla/Desktop/Projects/Genomics/SCRNA/',x, '/barcodes.tsv.gz'))
+          
+  #Create a Seurat Object and assigning a value to name:
+   assign(name, CreateSeuratObject(counts = cts))
+}
+```
+
+*Step 2:* The second step involves combining these 7 seurat objects into a single merged object to reduce errors and to allow for easy accession and manipulation. 
+```{r merge, include=FALSE, echo=FALSE, warning=FALSE}
+#Merge all the seven different Seurat objects in to one to enable easy QC: 
+
+ merged_seurat <- merge(HB17_background, y = c(HB17_PDX, HB17_tumor, HB30_PDX, HB30_tumor,HB53_background, HB53_tumor), add.cell.ids = ls()[3:9], project = "HB")
+
+#merged_seurat
+```
+
+The merged seurat object contains a total of 33538 features or genes across 77936 samples from the seven individual seurat objects. 
+
+```{r QC, include=FALSE, echo=FALSE, warning=FALSE}
+
+#View(merged_seurat@meta.data)
+merged_seurat$sample <- rownames(merged_seurat@meta.data)
+View(merged_seurat@meta.data)
+
+#Split sample columns
+
+merged_seurat@meta.data <- separate(merged_seurat@meta.data, col = 'sample', into = c('Patient', "Cell_type", "Barcode"), sep = "_")
+
+```
+
