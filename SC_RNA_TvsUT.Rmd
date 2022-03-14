@@ -30,7 +30,7 @@ library(tidyverse)
 library(gridExtra)
 ```
 
-*Step 1:*  The first step is to read the data into R using the `list.dirs` function. This is useful as there are 7 directories in total for each of the sample from each patient. A seurat object is created for each of the directories, generating a total of 7 seurat objects. 
+*Step 1:*  The first step is to __read the data__ into R using the `list.dirs` function. This is useful as there are 7 directories in total for each of the sample from each patient. A seurat object is created for each of the directories, generating a total of 7 seurat objects each named with the number of the patient and the kind of cells. For example one of the seurat object is named: `HB17_PDX`.
 ```{r data, include=FALSE, echo=FALSE, warning=FALSE}
 #get data location into R: 
 
@@ -40,7 +40,7 @@ dirs
 
 #go into each folder and fetch the counts matrix, create a Seurat object and assign to a variable
 
-for (x in dirs){
+for (x in dirs[-1]){
   #create variable names:
   name <- gsub('_filtered_feature_bc_matrix', '',x)
   cts <- ReadMtx(mtx = paste0('/Users/snehachalla/Desktop/Projects/Genomics/SCRNA/',x,'/matrix.mtx.gz'),
@@ -52,7 +52,7 @@ for (x in dirs){
 }
 ```
 
-*Step 2:* The second step involves combining these 7 seurat objects into a single merged object to reduce errors and to allow for easy accession and manipulation. 
+*Step 2:* The second step involves __combining these 7 seurat objects__ into a single merged object called `merged_seurat` to reduce errors and to allow for easy accession and manipulation. 
 ```{r merge, include=FALSE, echo=FALSE, warning=FALSE}
 #Merge all the seven different Seurat objects in to one to enable easy QC: 
 
@@ -61,17 +61,54 @@ for (x in dirs){
 #merged_seurat
 ```
 
-The merged seurat object contains a total of 33538 features or genes across 77936 samples from the seven individual seurat objects. 
+The merged seurat object contains a total of 33538 features or genes across 77936 samples from the seven individual seurat objects and can be viewed by calling the object 'merged_seurat`. To access the metadata within the merged object, we use : `merged_seurat@meta.data`. The metadata at this point contains only three columns: cell identity, ncount_RNA (which is the number of molecules within a cell, including and not limited to carbohydrates, proteins, lipids, nucleic acids etc..) and nfeature_RNA (which is the number of genes). 
 
 ```{r QC, include=FALSE, echo=FALSE, warning=FALSE}
 
 #View(merged_seurat@meta.data)
 merged_seurat$sample <- rownames(merged_seurat@meta.data)
-View(merged_seurat@meta.data)
+#View(merged_seurat@meta.data)
 
 #Split sample columns
 
 merged_seurat@meta.data <- separate(merged_seurat@meta.data, col = 'sample', into = c('Patient', "Cell_type", "Barcode"), sep = "_")
 
 ```
+
+We can further customize the metadata table by splitting the identity column into patient type, cell type and barcode using the `separate` command in R. To check if the data has merged correctly, we can use the following sanity checks: 
+```{r}
+#unique(merged_seurat@meta.data$Patient)
+#unique(merged_seurat@meta.data$Cell_type)
+```
+ 
+*Step 3:* The next step involves __Data Exploration__. There are multiple steps/stages of data exploration that can be performed to get a better understanding of the data. The data can then be filtered based on a number of criteria such as mitochondrial gene percentages, ribosomal gene percentanges, doublet percentage, transcript count threshold, number of highly and lowly expressed genes etc. To demonstrate a few, here we see how to:
+
+*a) Calculate the percentage of mitochondrial genes:*
+```{r mito, include=FALSE, echo=FALSE, warning=FALSE}
+merged_seurat$percent.mt <- PercentageFeatureSet(merged_seurat, pattern = '^MT-')
+
+#View(merged_seurat@meta.data)
+```
+This gives us a list of mitochondrial genes for each of the 77936 samples and adds the column called `percent.mt` to the metadata. The more number of mitochondrial genes  We can also visualize this using a violin plot. The violin plot below shows that a major proportion of cells have multiple molecules in the range of about 30,000 per cell. A very few cells have even higher number of molecules, approximately around 60,000 to 90,000 per cell. Similarly, most of the cells have a large number of unique genes about 7000 genes per cell. A very small proportion of cells have even greater number of genes i.e. around 10,000 to 12,000 unique genes per cell. It is interesting to note that almost all of the cells have mitochondrial genes at 20 - 30% concentration compared to the rest of the genes. About 4 cells have even higher concentration of mitochondrial cells i.e. around 60% mitochondrial genes. Cells with a very high percentage of mitochondrial genes are considered as poor quality and we need to filter out these cells. 
+
+```{r vp_mt, include=FALSE, echo=TRUE, warning=FALSE}
+vp_mt <- VlnPlot(merged_seurat, features = c("nCount_RNA", "nFeature_RNA",          "percent.mt", ncol=3))
+```
+
+However, looking at each of these criteria individually can be misleading. The following scatter plot allows us to view both the feature count and the molecule count on the same graph. A good quality cell should follow a straight line as you would expect it to have a large number of molecules as well as large number of genes. From the graph below, we can see that most of the cells follow a straight line but some end up plateuing which could indicate not so good quality. We want to filter out such cells. 
+
+```{r vp_filter, include=FALSE, echo=TRUE, warning=FALSE}
+
+vp_filter <- FeatureScatter(merged_seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = lm)
+```
+
+*b) Calculate the transcript counts and filter for a set threshold count:*
+```{r}
+merged_subset <- subset(merged_seurat, subset = nCount_RNA > 800 & nFeature_RNA > 500 & percent.mt < 10)
+```
+After subsetting using some fixed threshold values, we see that the merged seurat object now contains 33538 feature across 67851 samples as opposed to 33538 genes across 77936. 
+
+
+
+
 
