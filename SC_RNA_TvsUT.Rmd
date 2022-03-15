@@ -7,11 +7,11 @@ output:
   html_document: default
 ---
 
-__* Objective: *__  
+__*Objective:*__  
 
 The goal of this project is to determine the heterogeniety of the tumor cells coming from the liver tissue of patients suffering with Hepatoblastoma(HB), a form of pediatric liver cancer. A secondary objective is to account for any batch effects that might be observed due to the integration of samples from multiple sources. 
 
-__*Data: *__  
+__*Data:*__  
 
 The data is obtained from NCBI geo, accession number: GSE180665. The data is downloaded and unzipped to show data from three types of tissues: actual tumor, background (i.e., cells from around the tumor) and patient derived xenografts(PDX) which are cells grown within a mouse to study different stages of cancer and its progression. 
 
@@ -30,7 +30,7 @@ library(tidyverse)
 library(gridExtra)
 ```
 
-*Step 1:*  The first step is to __read the data__ into R using the `list.dirs` function. This is useful as there are 7 directories in total for each of the sample from each patient. A seurat object is created for each of the directories, generating a total of 7 seurat objects each named with the number of the patient and the kind of cells. For example one of the seurat object is named: `HB17_PDX`.
+*__Step 1:__*  The first step is to __read the data__ into R using the `list.dirs` function. This is useful as there are 7 directories in total for each of the sample from each patient. A seurat object is created for each of the directories, generating a total of 7 seurat objects each named with the number of the patient and the kind of cells. For example one of the seurat object is named: `HB17_PDX`.
 ```{r data, include=FALSE, echo=FALSE, warning=FALSE}
 #get data location into R: 
 
@@ -52,7 +52,7 @@ for (x in dirs[-1]){
 }
 ```
 
-*Step 2:* The second step involves __combining these 7 seurat objects__ into a single merged object called `merged_seurat` to reduce errors and to allow for easy accession and manipulation. 
+*__Step 2:__* The second step involves __combining these 7 seurat objects__ into a single merged object called `merged_seurat` to reduce errors and to allow for easy accession and manipulation. 
 ```{r merge, include=FALSE, echo=FALSE, warning=FALSE}
 #Merge all the seven different Seurat objects in to one to enable easy QC: 
 
@@ -81,7 +81,7 @@ We can further customize the metadata table by splitting the identity column int
 #unique(merged_seurat@meta.data$Cell_type)
 ```
  
-*Step 3:* The next step involves __Data Exploration__. There are multiple steps/stages of data exploration that can be performed to get a better understanding of the data. The data can then be filtered based on a number of criteria such as mitochondrial gene percentages, ribosomal gene percentanges, doublet percentage, transcript count threshold, number of highly and lowly expressed genes etc. To demonstrate a few, here we see how to:
+*__Step 3:__* The next step involves __Data Exploration__. There are multiple steps/stages of data exploration that can be performed to get a better understanding of the data. The data can then be filtered based on a number of criteria such as mitochondrial gene percentages, ribosomal gene percentanges, doublet percentage, transcript count threshold, number of highly and lowly expressed genes etc. To demonstrate a few, here we see how to:
 
 *a) Calculate the percentage of mitochondrial genes:*
 ```{r mito, include=FALSE, echo=FALSE, warning=FALSE}
@@ -106,9 +106,36 @@ vp_filter <- FeatureScatter(merged_seurat, feature1 = "nCount_RNA", feature2 = "
 ```{r}
 merged_subset <- subset(merged_seurat, subset = nCount_RNA > 800 & nFeature_RNA > 500 & percent.mt < 10)
 ```
-After subsetting using some fixed threshold values, we see that the merged seurat object now contains 33538 feature across 67851 samples as opposed to 33538 genes across 77936. 
+After sub-setting using some fixed threshold values, we see that the merged seurat object now contains 33538 feature across 67851 samples as opposed to 33538 genes across 77936. 
 
+*__Step 4:__* This step includes __Normalization__ to compare gene expression across multiple cells. This is to account for the possible preferential amplificaton that some genes might experience. sc-RNA normalization methods are different from bulk-RNA seq nomralization methods. A few of the normalization methods developed for scRNA are: Single Cell Tagged Reverse Transcription, Bayesian Analysis of singe cell sequencing data, Gamma regression model, scran, Robust normalization of single cell data and Linnorm. 
 
+Here, we divide the gene expression data in each cell by the total gene expression, multiply it by a scaling factor and then log transform it. The function within seurat to perform this operation is `Normalize Data` and the method we use for normalization is  `log normalize`. 
 
+```{r}
+normalized_obj <- NormalizeData(merged_seurat)
+str(normalized_obj)
+```
+A neat trick to view the commands and processes being done on the seurat object post filtering is to use `str(object_name)`. This will generate a list of all the commands/processing that is done on the seurat object post processing. 
 
+*__Step 5:__* The next step is to __identify highly variable features__. Since the goal is to understand the biological differences between cells, it makes sense to analyze the cells that show the highest variation. 
+```{r}
+var_features <- FindVariableFeatures(normalized_obj, selection.method = "vst", nfeatures = 2000)
+```
+*__Step 6:__* Next, we __scale__ the data. Scaling is important for dimensional reduction and is used to regress technical noise. Also, the highly expressing genes show a greater amount of variation across all the cells. We need to scale the data to scale variation with expression levels. `ScaleData` function within seurat performs this by:   
+- adjusting the expression of the genes to have a mean of 0 across all the cells.  
+- scaling the expression of each gene to have the variance around 1 across all the cells. 
+
+```{r}
+scaled_data <- ScaleData(var_features)
+PCA_data <- RunPCA(scaled_data)
+
+```
+
+*__Step 7:__* Scaling is followed by __linear dimensionality reduction__. The `RunPCA` function performs a PCA on the cells based on expression data. The problem we now face is determing the optimal number of clusters. There are many methods available. Elbow plot is one way of approaching this problem. The Elbow plot looks at the percentage of variabce explained as a function of number of clusters. The goal of choosing the optimal number of clusters is to ensure that adding another cluster does not add more information to the chart. The elbow plot depicts the percentage of variance across a range of cluster numbers. At a certain point, a dip in the trend can be observed (represents that beyond this cluster number, the clusters do not explain a lot of variance observed in the data) which would be the optimum number of clusters. The chart below shows the elbow plot and we can see that the optimal number of clusters is: 
+
+```{r}
+elb_plot <- ElbowPlot(PCA_data)
+elb_plot
+```
 
